@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { PDFParse } from "pdf-parse";
 import fs from "fs";
+import { chunkText } from "../rag/chunker";
+import { generateEmbedding } from "../rag/embedder";
+import { chroma } from "../rag/chroma";
 
 export const uploadfile = async (req: Request, res: Response) => {
     try {
@@ -16,27 +19,50 @@ export const uploadfile = async (req: Request, res: Response) => {
         // Read uploaded PDF
         const buffer = fs.readFileSync(file.path);
 
-        // Create parser
+        // Parse PDF
         const parser = new PDFParse({
             data: new Uint8Array(buffer),
         });
 
-        // Extract text
         const result = await parser.getText();
-
-        // Clean up parser resources
         await parser.destroy();
+
+        // Chunk the extracted text
+        const chunks = chunkText(result.text);
+
+        // Get or create collection
+        const collection = await chroma.getOrCreateCollection({
+            name: "documents",
+        });
+
+        // Generate embeddings and store them
+        for (let i = 0; i < chunks.length; i++) {
+            const embedding = await generateEmbedding(chunks[i]);
+
+            await collection.add({
+                ids: [`${file.filename}-${i}`],
+                documents: [chunks[i]],
+                embeddings: [embedding],
+                metadatas: [
+                    {
+                        filename: file.originalname,
+                        chunkIndex: i,
+                    },
+                ],
+            });
+        }
 
         return res.status(200).json({
             success: true,
-            text: result.text,
+            message: "Document indexed successfully.",
+            chunksIndexed: chunks.length,
         });
     } catch (error) {
         console.error(error);
 
         return res.status(500).json({
             success: false,
-            message: "Failed to parse PDF",
+            message: "Failed to process document.",
         });
     }
 };
