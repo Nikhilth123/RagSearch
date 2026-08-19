@@ -7,6 +7,7 @@ export type RetrievedChunk = {
     documentId: string;
     chunkIndex: number;
     pageNumber: number | null;
+    distance: number;
 };
 
 export async function retrieveRelevantChunks(
@@ -14,19 +15,30 @@ export async function retrieveRelevantChunks(
     nResults: number = 5
 ): Promise<RetrievedChunk[]> {
 
-    // 1. Convert user query into embedding
-    const embedding = await generateEmbedding(query);
+    // --------------------------------
+    // 1. Generate query embedding
+    // --------------------------------
 
+    const embedding =
+        await generateEmbedding(query);
+
+    // --------------------------------
     // 2. Get Chroma collection
+    // --------------------------------
+
     const collection =
         await chroma.getOrCreateCollection({
             name: "documents",
         });
 
-    // 3. Search for similar chunks
+    // --------------------------------
+    // 3. Search Chroma
+    // --------------------------------
+
     const results = await collection.query({
         queryEmbeddings: [embedding],
         nResults,
+
         include: [
             "documents",
             "metadatas",
@@ -34,13 +46,28 @@ export async function retrieveRelevantChunks(
         ],
     });
 
-    const documents = results.documents?.[0] ?? [];
-    const metadatas = results.metadatas?.[0] ?? [];
+    const documents =
+        results.documents?.[0] ?? [];
+
+    const metadatas =
+        results.metadatas?.[0] ?? [];
+
+    const distances =
+        results.distances?.[0] ?? [];
+
+    // --------------------------------
+    // 4. Similarity threshold
+    // --------------------------------
+
+    const MAX_DISTANCE = 0.6;
 
     const retrievedChunks: RetrievedChunk[] = [];
 
-    // 4. Combine document + metadata
-    for (let i = 0; i < documents.length; i++) {
+    for (
+        let i = 0;
+        i < documents.length;
+        i++
+    ) {
 
         const document = documents[i];
         const metadata = metadatas[i];
@@ -52,23 +79,41 @@ export async function retrieveRelevantChunks(
             continue;
         }
 
+        const distance =
+            distances[i] ?? Infinity;
+
+        // Reject irrelevant chunks
+        if (distance > MAX_DISTANCE) {
+            continue;
+        }
+
         retrievedChunks.push({
             text: document,
 
             filename:
-                String(metadata.filename ?? ""),
+                String(
+                    metadata.filename ?? ""
+                ),
 
             documentId:
-                String(metadata.documentId ?? ""),
+                String(
+                    metadata.documentId ?? ""
+                ),
 
             chunkIndex:
-                Number(metadata.chunkIndex ?? 0),
+                Number(
+                    metadata.chunkIndex ?? 0
+                ),
 
             pageNumber:
                 metadata.pageNumber !== null &&
                 metadata.pageNumber !== undefined
-                    ? Number(metadata.pageNumber)
+                    ? Number(
+                        metadata.pageNumber
+                    )
                     : null,
+
+            distance,
         });
     }
 

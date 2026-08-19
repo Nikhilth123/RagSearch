@@ -6,7 +6,9 @@ export const chat = async (
     req: Request,
     res: Response
 ) => {
+
     try {
+
         // --------------------------------
         // 1. Get question
         // --------------------------------
@@ -20,7 +22,8 @@ export const chat = async (
         ) {
             return res.status(400).json({
                 success: false,
-                message: "Question is required",
+                message:
+                    "Question is required",
             });
         }
 
@@ -35,7 +38,23 @@ export const chat = async (
             );
 
         // --------------------------------
-        // 3. Generate answer using context
+        // 3. No relevant context
+        // --------------------------------
+
+        if (context.length === 0) {
+
+            return res.status(200).json({
+                success: true,
+
+                answer:
+                    "I don't know.",
+
+                sources: [],
+            });
+        }
+
+        // --------------------------------
+        // 4. Generate answer
         // --------------------------------
 
         const answer =
@@ -45,29 +64,45 @@ export const chat = async (
             );
 
         // --------------------------------
-        // 4. Extract source information
+        // 5. Prepare citations
         // --------------------------------
 
-        const sources = context.map(
-            (chunk) => ({
-                filename: chunk.filename,
-                documentId: chunk.documentId,
-                pageNumber: chunk.pageNumber,
-                chunkIndex: chunk.chunkIndex,
-            })
-        );
+        const sources =
+            context.map(
+                (chunk, index) => ({
+                    citation: `[${index + 1}]`,
+
+                    filename:
+                        chunk.filename,
+
+                    documentId:
+                        chunk.documentId,
+
+                    pageNumber:
+                        chunk.pageNumber,
+
+                    chunkIndex:
+                        chunk.chunkIndex,
+
+                    distance:
+                        chunk.distance,
+                })
+            );
 
         // --------------------------------
-        // 5. Return response
+        // 6. Return response
         // --------------------------------
 
         return res.status(200).json({
             success: true,
+
             answer,
+
             sources,
         });
 
     } catch (error) {
+
         console.error(
             "RAG query error:",
             error
@@ -75,7 +110,8 @@ export const chat = async (
 
         return res.status(500).json({
             success: false,
-            message: "Internal Server Error",
+            message:
+                "Internal Server Error",
         });
     }
 };
