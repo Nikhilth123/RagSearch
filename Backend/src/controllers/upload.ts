@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { PDFParse } from "pdf-parse";
 import fs from "fs";
+
 import { chunkText, Chunk } from "../rag/chunker";
 import { generateEmbeddings } from "../rag/embedder";
 import { chroma } from "../rag/chroma";
@@ -27,7 +28,9 @@ export const uploadfile = async (
         // 2. Read uploaded PDF
         // --------------------------------
 
-        const buffer = fs.readFileSync(file.path);
+        const buffer = fs.readFileSync(
+            file.path
+        );
 
         // --------------------------------
         // 3. Create PDF parser
@@ -41,7 +44,8 @@ export const uploadfile = async (
         // 4. Extract text page-by-page
         // --------------------------------
 
-        const result = await parser.getText();
+        const result =
+            await parser.getText();
 
         await parser.destroy();
 
@@ -50,7 +54,7 @@ export const uploadfile = async (
         );
 
         // --------------------------------
-        // 5. Chunk each page
+        // 5. Create chunks page-by-page
         // --------------------------------
 
         const allChunks: Chunk[] = [];
@@ -58,23 +62,26 @@ export const uploadfile = async (
         let globalChunkIndex = 0;
 
         for (const page of result.pages) {
-            // Skip empty pages
+
+            // Ignore empty pages
             if (!page.text.trim()) {
                 continue;
             }
 
-            const pageChunks = chunkText(
-                page.text,
-                file.filename,
-                500,
-                100,
-                page.num
-            );
+            const pageChunks =
+                chunkText(
+                    page.text,
+                    file.filename,
+                    500,
+                    100,
+                    page.num
+                );
 
-            // Convert local chunk indexes
-            // into global chunk indexes
+            // Give every chunk a global index
             for (const chunk of pageChunks) {
-                chunk.chunkIndex = globalChunkIndex;
+
+                chunk.chunkIndex =
+                    globalChunkIndex;
 
                 chunk.id =
                     `${file.filename}-chunk-${globalChunkIndex}`;
@@ -96,12 +103,13 @@ export const uploadfile = async (
         if (allChunks.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: "No text found in PDF",
+                message:
+                    "No text found in PDF",
             });
         }
 
         // --------------------------------
-        // 7. Get or create Chroma collection
+        // 7. Get Chroma collection
         // --------------------------------
 
         const collection =
@@ -120,15 +128,21 @@ export const uploadfile = async (
             i < allChunks.length;
             i += BATCH_SIZE
         ) {
-            const batch = allChunks.slice(
-                i,
-                i + BATCH_SIZE
-            );
+
+            const batch =
+                allChunks.slice(
+                    i,
+                    i + BATCH_SIZE
+                );
 
             console.log(
-                `Processing chunks ${i + 1} - ` +
-                `${i + batch.length} ` +
-                `of ${allChunks.length}`
+                `Processing chunks ${
+                    i + 1
+                } - ${
+                    i + batch.length
+                } of ${
+                    allChunks.length
+                }`
             );
 
             // --------------------------------
@@ -138,7 +152,8 @@ export const uploadfile = async (
             const embeddings =
                 await generateEmbeddings(
                     batch.map(
-                        (chunk) => chunk.text
+                        (chunk) =>
+                            chunk.text
                     )
                 );
 
@@ -162,32 +177,36 @@ export const uploadfile = async (
             // --------------------------------
 
             await collection.add({
+
                 ids: batch.map(
-                    (chunk) => chunk.id
+                    (chunk) =>
+                        chunk.id
                 ),
 
                 documents: batch.map(
-                    (chunk) => chunk.text
+                    (chunk) =>
+                        chunk.text
                 ),
 
                 embeddings,
 
-                metadatas: batch.map(
-                    (chunk) => ({
-                        filename:
-                            file.originalname,
+                metadatas:
+                    batch.map(
+                        (chunk) => ({
+                            filename:
+                                file.originalname,
 
-                        documentId:
-                            chunk.documentId,
+                            documentId:
+                                chunk.documentId,
 
-                        chunkIndex:
-                            chunk.chunkIndex,
+                            chunkIndex:
+                                chunk.chunkIndex,
 
-                        pageNumber:
-                            chunk.pageNumber ??
-                            null,
-                    })
-                ),
+                            pageNumber:
+                                chunk.pageNumber ??
+                                null,
+                        })
+                    ),
             });
         }
 
@@ -195,19 +214,22 @@ export const uploadfile = async (
         // 12. Success response
         // --------------------------------
 
-        return res.status(200).json({
-            success: true,
-            message:
-                "Document indexed successfully.",
+       return res.status(200).json({
+    success: true,
 
-            pagesProcessed:
-                result.pages.length,
+    message: "Document indexed successfully.",
 
-            chunksIndexed:
-                allChunks.length,
-        });
+    documentId: file.filename,
+
+    filename: file.originalname,
+
+    pagesProcessed: result.pages.length,
+
+    chunksIndexed: allChunks.length,
+});
 
     } catch (error) {
+
         console.error(
             "PDF ingestion error:",
             error
@@ -215,6 +237,7 @@ export const uploadfile = async (
 
         return res.status(500).json({
             success: false,
+
             message:
                 "Failed to process document.",
         });

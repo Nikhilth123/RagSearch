@@ -1,19 +1,26 @@
 import { Request, Response } from "express";
+
 import { retrieveRelevantChunks } from "../rag/retriever";
 import { generateAnswer } from "../rag/generator";
+import { rerankChunks } from "../rag/reranker";
 
 export const chat = async (
     req: Request,
     res: Response
 ) => {
-
     try {
+        // --------------------------------
+        // 1. Get question + documentId
+        // --------------------------------
+
+        const {
+            question,
+            documentId,
+        } = req.body;
 
         // --------------------------------
-        // 1. Get question
+        // 2. Validate question
         // --------------------------------
-
-        const { question } = req.body;
 
         if (
             !question ||
@@ -22,87 +29,126 @@ export const chat = async (
         ) {
             return res.status(400).json({
                 success: false,
-                message:
-                    "Question is required",
+                message: "Question is required",
             });
         }
 
         // --------------------------------
-        // 2. Retrieve relevant chunks
+        // 3. Validate documentId
         // --------------------------------
 
-        const context =
+        if (
+            !documentId ||
+            typeof documentId !== "string"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "documentId is required",
+            });
+        }
+
+        // --------------------------------
+        // 4. Retrieve candidate chunks
+        // --------------------------------
+
+        const candidates =
             await retrieveRelevantChunks(
                 question,
-                5
+                documentId,
+                8,
             );
 
         // --------------------------------
-        // 3. No relevant context
+        // 5. No relevant chunks
         // --------------------------------
 
-        if (context.length === 0) {
-
+        if (candidates.length === 0) {
             return res.status(200).json({
                 success: true,
-
-                answer:
-                    "I don't know.",
-
+                answer: "I don't know.",
                 sources: [],
             });
         }
 
         // --------------------------------
-        // 4. Generate answer
+        // 6. Rerank candidates
         // --------------------------------
 
-        const answer =
+        const context =
+            await rerankChunks(
+                question,
+                candidates,
+                3
+            );
+
+        // --------------------------------
+        // 7. Generate answer + citations
+        // --------------------------------
+
+        const result =
             await generateAnswer(
                 context,
                 question
             );
 
         // --------------------------------
-        // 5. Prepare citations
+        // 8. Validate citations
         // --------------------------------
 
-        const sources =
-            context.map(
-                (chunk, index) => ({
-                    citation: `[${index + 1}]`,
-
-                    filename:
-                        chunk.filename,
-
-                    documentId:
-                        chunk.documentId,
-
-                    pageNumber:
-                        chunk.pageNumber,
-
-                    chunkIndex:
-                        chunk.chunkIndex,
-
-                    distance:
-                        chunk.distance,
-                })
+        const validCitations =
+            result.citations.filter(
+                (citation) =>
+                    Number.isInteger(citation) &&
+                    citation >= 1 &&
+                    citation <= context.length
             );
 
         // --------------------------------
-        // 6. Return response
+        // 9. Build actual source metadata
+        // --------------------------------
+
+        const sources =
+            validCitations.map(
+                (citation) => {
+                    const chunk =
+                        context[citation - 1];
+
+                    return {
+                        citation:
+                            `[${citation}]`,
+
+                        filename:
+                            chunk.filename,
+
+                        documentId:
+                            chunk.documentId,
+
+                        pageNumber:
+                            chunk.pageNumber,
+
+                        chunkIndex:
+                            chunk.chunkIndex,
+
+                        distance:
+                            chunk.distance,
+                    };
+                }
+            );
+
+        // --------------------------------
+        // 10. Final response
         // --------------------------------
 
         return res.status(200).json({
             success: true,
 
-            answer,
+            answer:
+                result.answer,
 
             sources,
         });
 
     } catch (error) {
-
         console.error(
             "RAG query error:",
             error

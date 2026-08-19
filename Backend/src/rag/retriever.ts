@@ -12,6 +12,7 @@ export type RetrievedChunk = {
 
 export async function retrieveRelevantChunks(
     query: string,
+    documentId: string,
     nResults: number = 5
 ): Promise<RetrievedChunk[]> {
 
@@ -23,7 +24,7 @@ export async function retrieveRelevantChunks(
         await generateEmbedding(query);
 
     // --------------------------------
-    // 2. Get Chroma collection
+    // 2. Get collection
     // --------------------------------
 
     const collection =
@@ -32,12 +33,17 @@ export async function retrieveRelevantChunks(
         });
 
     // --------------------------------
-    // 3. Search Chroma
+    // 3. Search ONLY this document
     // --------------------------------
 
     const results = await collection.query({
         queryEmbeddings: [embedding],
+
         nResults,
+
+        where: {
+            documentId: documentId,
+        },
 
         include: [
             "documents",
@@ -59,16 +65,19 @@ export async function retrieveRelevantChunks(
     // 4. Similarity threshold
     // --------------------------------
 
-    const MAX_DISTANCE = 0.6;
+    const MAX_DISTANCE = 0.7;
 
     const retrievedChunks: RetrievedChunk[] = [];
+
+    // --------------------------------
+    // 5. Build retrieved chunks
+    // --------------------------------
 
     for (
         let i = 0;
         i < documents.length;
         i++
     ) {
-
         const document = documents[i];
         const metadata = metadatas[i];
 
@@ -82,7 +91,7 @@ export async function retrieveRelevantChunks(
         const distance =
             distances[i] ?? Infinity;
 
-        // Reject irrelevant chunks
+        // Ignore irrelevant chunks
         if (distance > MAX_DISTANCE) {
             continue;
         }
